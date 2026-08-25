@@ -20,13 +20,18 @@
 // The byte change is what forces old clients to drop stale caches, so it can't
 // be derived from an import (this file is not an ES module). test/version.test.js
 // fails the build if this literal drifts.
-const CACHE = 'csa-v1.23.0';
+const CACHE = 'csa-v1.24.0';
 const NET_TIMEOUT_MS = 3000;
 
 // Injected at build time by vite-plugin-pwa. In dev the manifest is empty,
 // so precache no-ops silently.
 const MANIFEST = self.__WB_MANIFEST || [];
 const ASSETS = MANIFEST.map(e => (typeof e === 'string' ? e : e.url));
+
+// URL of the app shell, resolved against the SW's registration scope so it
+// works both at `/` (dev/preview) and `/CSA-Evaluation-LO/` (GitHub Pages).
+// Manifest URLs are relative, so cache.add stores them under this same base.
+const SHELL_URL = new URL('index.html', self.registration.scope).href;
 
 self.addEventListener('install', e => {
     e.waitUntil(
@@ -72,7 +77,7 @@ self.addEventListener('fetch', e => {
             const cached = await caches.match(e.request);
             if (cached) return cached;
             if (e.request.mode === 'navigate') {
-                const shell = await caches.match('/index.html');
+                const shell = await caches.match(SHELL_URL);
                 if (shell) return shell;
             }
             return new Response('Offline', {

@@ -14,9 +14,15 @@ import { defineConfig } from 'vite';
 import obfuscator from 'vite-plugin-javascript-obfuscator';
 import { VitePWA } from 'vite-plugin-pwa';
 
+// GitHub Pages serves this repo under `/CSA-Evaluation-LO/`. Setting `base`
+// makes Vite rewrite every asset URL in the built `index.html` / SW manifest
+// with that prefix, and it exposes the same value at runtime as
+// `import.meta.env.BASE_URL`. Local dev / preview stay at `/` — the workflow
+// exports `VITE_BASE_PATH=/CSA-Evaluation-LO/` before `npm run build`.
 export default defineConfig({
     root: '.',
     publicDir: 'public',
+    base: process.env.VITE_BASE_PATH || '/',
     build: {
         outDir: 'dist',
         emptyOutDir: true,

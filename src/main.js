@@ -25,7 +25,11 @@ import './wiring.js';
 // ============================================================
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/sw.js').catch(() => {});
+        // BASE_URL is '/' during dev/preview and '/CSA-Evaluation-LO/' on the
+        // Pages build. Registering the SW at the base + '/sw.js' keeps the
+        // scope aligned with the deployed subpath.
+        const swUrl = (import.meta.env.BASE_URL || '/') + 'sw.js';
+        navigator.serviceWorker.register(swUrl).catch(() => {});
     });
 }
 
