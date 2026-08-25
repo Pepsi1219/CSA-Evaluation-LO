@@ -4,14 +4,40 @@
 # OS
 .DS_Store
 Thumbs.db
+desktop.ini
 
 # Editor
 .vscode/
-node_modules/
+.idea/
+*.swp
+*.swo
+*~
 
-# Vite
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Vite / build output
 dist/
+.vite/
+*.tsbuildinfo
+
+# Env / secrets
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
+
+# Test / tooling artefacts
+coverage/
+.nyc_output/
 .playwright-mcp/
+playwright-report/
+test-results/
+
+# Scratch
+*.local
+tmp/
+scratch/
