@@ -18,7 +18,7 @@ import {
 } from './app.js';
 import { openHistoryModal } from './history.js';
 import { setChartMode } from './chart.js';
-import { signOutUser } from './auth.js';
+import { signOut } from './auth.js';
 import {
     openTutorial, tutOpenLesson, tutStep, tutStartQuiz, tutPick,
     tutQuizNav, tutGoHome, tutOpenCert, tutGenerateCert, tutDownloadCert,
@@ -68,10 +68,10 @@ const ACTIONS = {
     'tutorial-open': () => openTutorial(),
     // feedback (moved from the floating footer button into the actions menu)
     feedback:       () => { openFeedbackModal(); closeActionsMenu(); },
-    // account sign-out (onAuthChange → main.js reloads the page).
-    // Close the actions menu first so the click doesn't leave it visibly open
-    // during the reload transition — matches other menu items' behaviour.
-    signout:        () => { closeActionsMenu(); signOutUser(); },
+    // sign out — clear the frontend login marker and reload back to the
+    // login card. Close the actions menu first so it isn't left visibly
+    // open during the reload transition.
+    signout:        () => { closeActionsMenu(); signOut(); window.location.reload(); },
     // chart mode toggle (generated markup in chart.js)
     'chart-mode':   arg => setChartMode(arg),
     // tutorial (generated markup in tutorial.js)

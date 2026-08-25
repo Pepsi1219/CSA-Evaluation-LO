@@ -1,18 +1,12 @@
 // Copyright (c) 2025 Pongsathon. All rights reserved. Proprietary — see LICENSE.
 //
-// Vite build config. Phase 3 adds JavaScript obfuscation to the shipped bundle
-// as the deterrence layer that goes with the LICENSE. Firestore Security Rules
-// are the actual data guard; obfuscation only makes the client-side calc logic
-// costly to lift, not impossible.
+// Vite build config. Ships a JavaScript-obfuscated bundle as the deterrence
+// layer that goes with the LICENSE. The obfuscator only makes the client-side
+// calc logic costly to lift, not impossible.
 //
 // Tuning notes (change with caution):
-//   - include only src/*.js — never obfuscate node_modules; Firebase in
-//     particular has computed identifiers the transformer will happily break.
-//   - controlFlowFlattening / stringArray with base64 encoding is the sweet
-//     spot: heavy enough to make the calc pipeline unreadable, light enough
-//     that bundle bloat stays manageable and mobile paint time isn't hurt.
-//   - selfDefending guards the obfuscator's own output against being reformatted;
-//     debugProtection makes DevTools trip a debugger loop on the calc path.
+//   - include only src/*.js — never obfuscate node_modules; some deps rely on
+//     computed identifiers the transformer will happily break.
 //   - disableConsoleOutput silences console.* — fine because we ship no logs.
 //   - renameGlobals stays FALSE: turning it on would rename references like
 //     `document`/`window`/DOM ids that our code assumes stay stable.
@@ -27,19 +21,6 @@ export default defineConfig({
         outDir: 'dist',
         emptyOutDir: true,
         sourcemap: false,   // never ship source maps — they undo every layer below
-    },
-    // Pre-bundle Firebase's tree-shakeable ESM entrypoints so `npm run dev`
-    // serves the SDK as a handful of chunks instead of dozens of individual
-    // module requests. Without this, cold-starting dev on this project takes
-    // several seconds to boot into the login card because each nested Firebase
-    // module round-trips through the dev server. Prod isn't affected (Rollup
-    // bundles regardless of this option).
-    optimizeDeps: {
-        include: [
-            'firebase/app',
-            'firebase/auth',
-            'firebase/firestore',
-        ],
     },
     plugins: [
         // Service worker — injectManifest strategy so we keep the hand-tuned

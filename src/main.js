@@ -1,18 +1,11 @@
 // Copyright (c) 2025 Pongsathon. All rights reserved.
 // Proprietary — see LICENSE. Do not copy, redistribute, or reverse engineer.
 // ============================================================
-// MAIN — entry point. Loaded as the single <script type="module">
-// in index.html. Three-phase boot:
-//   A (always): SW register, version stamp, no-zoom guards, theme +
-//               language — so the login overlay is themed/translated.
-//   B (async):  init Firebase, watch auth state. No user → show login
-//               overlay; user → enterApp once; sign-out mid-session →
-//               reload (so no data bleeds across accounts).
-//   C enterApp: subscribe history, await first snapshot, migrate this
-//               device's local history, hide overlay, run the rest of
-//               app init (form/stopwatch restore, calc, fonts).
-// When Firebase isn't configured (no .env), FIREBASE_ENABLED is false and
-// we boot straight into the app with localStorage history (Phase 1 behaviour).
+// MAIN — entry point. Loaded as the single <script type="module">.
+//   A: SW register, version stamp, no-zoom guards, theme + language.
+//   B: check the frontend login gate — hasSession() → enter the app;
+//      otherwise show the login card and wait for a valid code.
+// The auth backend was removed; sign-in is a plain allowlist check.
 // ============================================================
 import { APP_VERSION } from './version.js';
 import { translations } from './translations.js';
@@ -24,19 +17,11 @@ import {
 } from './app.js';
 import { t, currentLang } from './state.js';
 import { updateTutProgressBadge } from './tutorial.js';
-import {
-    FIREBASE_ENABLED, initFirebase, onAuthChange, subscribeHistory,
-    subscribeTutorial, reconcileTutorial,
-    migrateLocalHistory, _setCurrentUser, signInWithCode, authErrorKey,
-    emailToCode, hasCachedUserMarker, setCachedUserMarker,
-    clearCachedUserMarker,
-} from './auth.js';
-import { loadLocalHistory } from './history.js';
-import { loadLocalTutProgress } from './tutorial.js';
+import { hasSession, signIn, currentCode } from './auth.js';
 import './wiring.js';
 
 // ============================================================
-// Phase A — runs unconditionally, before any auth.
+// Phase A — always runs.
 // ============================================================
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
@@ -56,14 +41,14 @@ initTheme();
 const _savedLang = (() => { try { return localStorage.getItem('csa_lang'); } catch { return null; } })();
 changeLanguage(_savedLang && translations[_savedLang] ? _savedLang : 'th');
 
-// Flush pending debounced saves before hide/unload (independent of auth).
+// Flush pending debounced saves before hide/unload.
 window.addEventListener('pagehide', _flushHeavyUpdate);
 document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') _flushHeavyUpdate();
 });
 
 // ============================================================
-// Login overlay helpers
+// Login overlay wiring
 // ============================================================
 const loginOverlay      = document.getElementById('loginOverlay');
 const loginForm         = document.getElementById('loginForm');
@@ -72,21 +57,19 @@ const loginCodeToggle   = document.getElementById('loginCodeToggle');
 const loginError        = document.getElementById('loginError');
 const loginSubmitBtn    = document.getElementById('loginSubmitBtn');
 
-// Toggle body class so CSS reveals the login card + hides the app container.
-// The inline sync script in index.html already stamps `boot-login`/`boot-app`
-// from the cached-user marker at HTML-parse time, so first paint is already
-// correct — these helpers only run when auth resolution changes the truth
-// (marker was stale, or a fresh login just succeeded).
 function showLoginOverlay() {
-    if (!loginOverlay) return;
     document.body.classList.remove('boot-app');
     document.body.classList.add('boot-login');
     document.body.style.overflow = 'hidden';
     if (loginError) loginError.textContent = '';
 }
+function hideLoginOverlay() {
+    document.body.classList.remove('boot-login');
+    document.body.classList.add('boot-app');
+    document.body.style.overflow = '';
+}
 
-// Eye-icon toggle for the employee-code field. Starts as type="password"
-// (masked bullets); pressing the eye reveals the digits as plain text.
+// Eye-icon toggle: reveal / mask the entered code.
 loginCodeToggle?.addEventListener('click', () => {
     if (!loginCode) return;
     const reveal = loginCode.type === 'password';
@@ -94,10 +77,8 @@ loginCodeToggle?.addEventListener('click', () => {
     loginCodeToggle.setAttribute('aria-pressed', reveal ? 'true' : 'false');
 });
 
-// ---- Language switcher on the login card ----
-// The main header is hidden behind the overlay; operators need a way to change
-// language before signing in, so we render a compact 4-flag row at the top-right
-// of the card. Uses FLAG_SVG from app.js so it stays in sync with LANG_META.
+// Compact language row inside the login card (the header is hidden behind
+// the overlay). Uses FLAG_SVG so it stays in sync with the header picker.
 const loginLang = document.getElementById('loginLang');
 function renderLoginLang() {
     if (!loginLang) return;
@@ -116,18 +97,44 @@ loginLang?.addEventListener('click', e => {
     changeLanguage(btn.dataset.lang);
     renderLoginLang();
 });
-function hideLoginOverlay() {
-    if (!loginOverlay) return;
-    document.body.classList.remove('boot-login');
-    document.body.classList.add('boot-app');
-    document.body.style.overflow = '';
-}
+
+loginForm?.addEventListener('submit', e => {
+    e.preventDefault();
+    if (!loginCode) return;
+    const code = loginCode.value.trim();
+    if (loginError) loginError.textContent = '';
+    if (loginSubmitBtn) {
+        loginSubmitBtn.disabled = true;
+        loginSubmitBtn.dataset.loading = '1';
+        loginSubmitBtn.textContent = t('login_signing_in');
+    }
+    try {
+        signIn(code);
+        enterApp();
+    } catch (err) {
+        if (loginError) loginError.textContent = t(err.tkey || 'login_err_invalid');
+    } finally {
+        if (loginSubmitBtn) {
+            loginSubmitBtn.disabled = false;
+            delete loginSubmitBtn.dataset.loading;
+            loginSubmitBtn.textContent = t('login_signin_btn');
+        }
+    }
+});
 
 // ============================================================
-// Phase C — bring the app up for a signed-in (or Firebase-disabled) user.
+// Enter the app
 // ============================================================
 let _appStarted = false;
-function runAppInit() {
+function enterApp() {
+    if (_appStarted) return;
+    _appStarted = true;
+    hideLoginOverlay();
+
+    // Show the employee code in the Settings → Account row.
+    const accountEmail = document.getElementById('accountEmail');
+    if (accountEmail) accountEmail.textContent = currentCode();
+
     restoreFormState();
     restoreStopwatchState();
     _bumpSessionCount();
@@ -140,133 +147,8 @@ function runAppInit() {
     else window.addEventListener('load', loadWebFonts);
 }
 
-let _cloudAttached = false;
-
-// Reveal + init the app UI. No cloud sync — that's attachCloudSync's job,
-// called separately once Firebase auth resolves. Splitting these two lets
-// us optimistically run app init BEFORE Firebase finishes cold-loading
-// (cached-user marker path), so the user sees usable UI at first paint.
-function enterAppOptimistic() {
-    if (_appStarted) return;
-    _appStarted = true;
-    hideLoginOverlay();
-    runAppInit();
-}
-
-// Attach Firebase cloud sync + reveal account UI. Called once auth resolves
-// to a real user — either directly after enterAppOptimistic() (cached-user
-// case) or from enterApp() (fresh sign-in / stale-marker recovery).
-function attachCloudSync(user) {
-    if (_cloudAttached || !user) return;
-    _cloudAttached = true;
-    setCachedUserMarker();
-    // Kick off cloud sync in the background. Awaiting the first snapshots
-    // used to add 300–800 ms to the mobile cold-start; the app doesn't
-    // need history/tutorial data to render — both consumers (Settings
-    // launcher badge, history modal) use the subscribe*Change callbacks
-    // to re-render whenever the cache updates, so a lazy fill is fine.
-    // Reconcile runs on the first-snapshot resolve so it merges against
-    // real cloud state, not an empty cache.
-    subscribeHistory(user.uid)
-        .then(() => migrateLocalHistory(user.uid, loadLocalHistory()))
-        .catch(() => {});
-    subscribeTutorial(user.uid)
-        .then(() => reconcileTutorial(user.uid, loadLocalTutProgress()))
-        .catch(() => {});
-    // Reveal the account row in Settings and the header sign-out entry.
-    // Show the employee code (strip the synthetic @ie-calc.internal suffix —
-    // operators recognize the code, not the fake email).
-    const accountSection = document.getElementById('accountSection');
-    const accountEmail   = document.getElementById('accountEmail');
-    const menuSignout    = document.getElementById('menuSignoutItem');
-    if (accountEmail) accountEmail.textContent = emailToCode(user.email);
-    if (accountSection) accountSection.style.display = '';
-    if (menuSignout)    menuSignout.style.display  = '';
-}
-
-function enterApp(user) {
-    enterAppOptimistic();
-    if (user) attachCloudSync(user);
-}
-
 // ============================================================
-// Phase B — auth gate.
+// Boot decision
 // ============================================================
-async function boot() {
-    if (!FIREBASE_ENABLED) {
-        // No backend configured → Phase 1 behaviour, no login gate.
-        enterApp(null);
-        return;
-    }
-    // Optimistic reveal based on the cached-user marker (set on successful
-    // sign-in, cleared on sign-out). Runs BEFORE Firebase's SDK finishes
-    // cold-loading (~2–5 s on cheap phones) so the user sees usable UI at
-    // first paint instead of a spinner. The inline sync script in
-    // index.html already stamped the matching body class for CSS; here we
-    // wire up the JS-side state (run app init, or reveal the login form).
-    if (hasCachedUserMarker()) enterAppOptimistic();
-    else showLoginOverlay();
-
-    initFirebase();
-    // Safety: if Firebase never fires onAuthChange (network dies before init
-    // resolves) and we optimistically revealed the app for a cached user, they
-    // couldn't sign out or reach the login card. Cap the wait and force the
-    // login card so at least there's an escape hatch. Short (4 s) because
-    // signed-out users are already served by the optimistic path above.
-    const _bootTimeout = setTimeout(() => {
-        if (!_cloudAttached) showLoginOverlay();
-    }, 4000);
-    onAuthChange(user => {
-        _setCurrentUser(user);
-        clearTimeout(_bootTimeout);
-        if (user) {
-            // Attach cloud sync. If the optimistic path already revealed the
-            // app, this just wires the account UI + subscriptions on top; if
-            // we were showing the login card (marker was wiped but session
-            // survived in Firebase's IDB cache), enterApp() reveals the app.
-            if (_appStarted) attachCloudSync(user);
-            else enterApp(user);
-        } else if (_appStarted || _cloudAttached) {
-            // Signed out mid-session OR optimistic reveal was wrong (marker
-            // was stale, session actually gone). Hard reload so we start
-            // fresh at the login card with no per-user cache lingering.
-            clearCachedUserMarker();
-            window.location.reload();
-        } else {
-            // No stored session — show the login gate. Clear any stale marker
-            // so the next cold boot's optimistic path picks the right UI.
-            clearCachedUserMarker();
-            showLoginOverlay();
-        }
-    });
-}
-boot();
-
-// ============================================================
-// Login form submit
-// ============================================================
-loginForm?.addEventListener('submit', async e => {
-    e.preventDefault();
-    if (!loginCode) return;
-    const code = loginCode.value.trim();
-    if (!code) return;
-
-    if (loginError) loginError.textContent = '';
-    if (loginSubmitBtn) {
-        loginSubmitBtn.disabled = true;
-        loginSubmitBtn.dataset.loading = '1';
-        loginSubmitBtn.textContent = t('login_signing_in');
-    }
-    try {
-        await signInWithCode(code);
-        // onAuthChange → enterApp handles the transition + overlay hide.
-    } catch (err) {
-        if (loginError) loginError.textContent = t(authErrorKey(err));
-    } finally {
-        if (loginSubmitBtn) {
-            loginSubmitBtn.disabled = false;
-            delete loginSubmitBtn.dataset.loading;
-            loginSubmitBtn.textContent = t('login_signin_btn');
-        }
-    }
-});
+if (hasSession()) enterApp();
+else showLoginOverlay();

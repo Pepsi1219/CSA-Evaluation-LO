@@ -14,14 +14,6 @@
 // ============================================================
 
 import { currentLang, gaTrack } from './state.js';
-import {
-    FIREBASE_ENABLED, isSignedIn, getTutorialCache,
-    fsSaveTutorial, subscribeTutorialChange, mergeTutorialProgress,
-} from './auth.js';
-
-// True when tutorial reads/writes should route to Firestore instead of
-// localStorage: backend configured AND a user is signed in.
-function _useCloud() { return FIREBASE_ENABLED && isSignedIn(); }
 
 const TUT_IMG = 'assets/tutorial/';
 const STORAGE_KEY_TUT = 'csa_tutorial_v1';
@@ -199,11 +191,8 @@ const QUIZ_DATA = [
       o: [ { th: 'ธีม ภาษา และบทเรียน', en: 'Theme, language, and the tutorial' }, { th: 'เฉพาะการลบข้อมูล', en: 'Only data deletion' }, { th: 'เฉพาะการพิมพ์', en: 'Only printing' }, { th: 'ไม่มีอะไร', en: 'Nothing' } ], a: 0 },
 ];
 
-// ---- Progress storage (seam — mirrors history.js pattern) ----
-// loadLocalTutProgress is the pure localStorage read, exported so auth.js's
-// one-time reconciliation can pull whatever this device already had before
-// the user first signed in on it.
-export function loadLocalTutProgress() {
+// ---- Progress storage (localStorage) ----
+function loadTutProgress() {
     try {
         const raw = localStorage.getItem(STORAGE_KEY_TUT);
         const p = raw ? JSON.parse(raw) : null;
@@ -212,22 +201,8 @@ export function loadLocalTutProgress() {
         return p;
     } catch (_) { return { done: {}, quiz: null, cert: null }; }
 }
-function loadTutProgress() {
-    // Signed-in path returns the Firestore-fed cache so completion follows
-    // the user across devices; offline / signed-out falls back to localStorage.
-    return _useCloud() ? getTutorialCache() : loadLocalTutProgress();
-}
 function saveTutProgress(p) {
-    // Always write locally first as an offline fallback + fast synchronous
-    // re-read. If signed in, also write to Firestore (fire-and-forget — the
-    // snapshot listener updates the cache and re-renders on ack).
     try { localStorage.setItem(STORAGE_KEY_TUT, JSON.stringify(p)); } catch (_) {}
-    if (_useCloud()) {
-        // Union-merge against whatever's currently in the cache so a stale
-        // save doesn't wipe cross-device progress recorded elsewhere.
-        const merged = mergeTutorialProgress(getTutorialCache(), p);
-        fsSaveTutorial(merged);
-    }
 }
 
 const _allLessonIds = TUTORIAL_DATA.flatMap(c => c.lessons.map(l => l.id));
@@ -717,14 +692,6 @@ export function tutorialOnLangChange() {
     if (_tg('tutorialModal') && _tg('tutorialModal').style.display === 'flex') renderTutorial();
     updateTutProgressBadge();
 }
-
-// Re-render on Firestore snapshot changes (e.g. progress made on another
-// device, or our own optimistic write ack'd back). Cheap when the tutorial
-// isn't open — just a badge refresh.
-subscribeTutorialChange(() => {
-    updateTutProgressBadge();
-    if (_tg('tutorialModal')?.style.display === 'flex') renderTutorial();
-});
 
 // Exports for tests (also used internally):
 export { TUTORIAL_DATA, QUIZ_DATA, QUIZ_PASS_PCT, _letterSpace, _stepImgSrc };

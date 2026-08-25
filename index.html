@@ -16,25 +16,15 @@
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <!-- Firebase endpoints hit on boot (Firestore snapshot + Auth token check).
-         preconnect burns the DNS/TLS handshake in parallel with the bundle
-         download so the first request lands ~150 ms sooner on mobile 4G/5G. -->
-    <link rel="preconnect" href="https://firestore.googleapis.com" crossorigin>
-    <link rel="preconnect" href="https://securetoken.googleapis.com" crossorigin>
-    <link rel="preconnect" href="https://identitytoolkit.googleapis.com" crossorigin>
-    <link rel="dns-prefetch" href="https://ie-calc.firebaseapp.com">
 
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
 <!-- Sync gate — runs during HTML parse, before the browser paints anything.
-     Reads the cached-user marker and theme from localStorage and stamps the
+     Reads the theme + the login marker from localStorage and stamps the
      body/root so CSS can reveal the right UI (login card or app) from the
-     very first frame. The deferred main.js module attaches JS behavior once
-     it finishes loading; by then the correct UI has already painted, so the
-     user never sees a spinner. Kept tiny + defensive (try/catch) so it can't
-     block the page. -->
+     very first frame. main.js confirms/updates it once its module loads. -->
 <script>
 (function(){
     try {
@@ -42,8 +32,8 @@
         if (t === 'dark' || t === 'light') document.documentElement.setAttribute('data-theme', t);
     } catch (e) {}
     try {
-        var seen = localStorage.getItem('csa_seen_user') === '1';
-        document.body.classList.add(seen ? 'boot-app' : 'boot-login');
+        var signed = !!localStorage.getItem('csa_login');
+        document.body.classList.add(signed ? 'boot-app' : 'boot-login');
     } catch (e) {
         document.body.classList.add('boot-login');
     }
@@ -143,9 +133,8 @@
 
                         <hr class="actions-divider">
 
-                        <!-- Sign out (revealed only when signed in via Firebase) -->
                         <button type="button" class="actions-item" role="menuitem"
-                                id="menuSignoutItem" data-action="signout" style="display:none;">
+                                id="menuSignoutItem" data-action="signout">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
                             <span class="lang-text" data-key="account_signout">ออกจากระบบ</span>
                         </button>
@@ -719,11 +708,10 @@
     </div>
 </div>
 
-<!-- ============ Login gate (Firebase Auth) ============ -->
+<!-- ============ Login gate (frontend allowlist) ============ -->
 <div id="loginOverlay" class="login-overlay" role="dialog" aria-modal="true" aria-labelledby="loginTitle">
     <div class="login-card">
-        <!-- Language switcher (top-right of the card). Populated by main.js so it
-             stays in sync with LANG_META. Buttons carry data-lang="<code>". -->
+        <!-- Language switcher (top-right of the card). Populated by main.js. -->
         <div id="loginLang" class="login-lang" role="group" aria-label="Language"></div>
         <div class="login-brand" aria-hidden="true">
             <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
@@ -841,8 +829,8 @@
                 </button>
             </div>
 
-            <!-- Account (only shown when signed in via Firebase) -->
-            <div class="settings-section" id="accountSection" style="display:none;">
+            <!-- Account: shows the employee code the user signed in with -->
+            <div class="settings-section" id="accountSection">
                 <div class="settings-section-label lang-text" data-key="set_account">บัญชี</div>
                 <div class="account-row">
                     <div class="account-info">
