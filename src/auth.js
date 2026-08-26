@@ -25,6 +25,7 @@ export const ALLOWED_CODES = [
     '13814',
     '15205',
     '2606004',
+    '2506086',
 ];
 
 // Session marker: written on successful sign-in, read on boot, cleared on

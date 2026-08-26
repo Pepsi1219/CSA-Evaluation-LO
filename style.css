@@ -91,8 +91,12 @@
 }
 
 /* ---- 1b. Dark Theme Tokens ---------------------------------
-   Same token names as above, dark values. Applies automatically
-   via prefers-color-scheme, or explicitly via [data-theme]. */
+   Same token names as above, dark values. LIGHT IS THE LOCKED DEFAULT:
+   `<html data-theme="light">` in index.html is the initial attribute, the
+   inline sync script only overwrites it when csa_theme has an explicit
+   'dark'/'light' value, and initTheme() falls back to 'light' — so the
+   :not([data-theme="light"]) gate below suppresses the OS dark-mode
+   preference and dark tokens only apply when the user toggles. */
 @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
         --success-soft: rgba(22, 163, 74, 0.18);

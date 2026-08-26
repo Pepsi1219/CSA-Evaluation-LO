@@ -1,5 +1,8 @@
-# Claude Code
-.claude/
+# Claude Code — ignore session state / caches, but track the project's own
+# settings + hooks so the whole-system-thinking reminder ships with the repo.
+.claude/*
+!.claude/settings.json
+!.claude/hooks/
 
 # OS
 .DS_Store
